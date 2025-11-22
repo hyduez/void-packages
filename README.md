@@ -1,3 +1,13 @@
 `linux6.17-zen` ([click here](https://github.com/hyduez/void-packages/tree/master/srcpkgs/linux6.17-zen)) is optimized for Ryzen 5 8600G. A Zen 4 and monolithic (Phoenix arch) CPU, with 2 NPUs came from Ryzen AI (XDNA drivers). DDR5 dual-channel too and NVME config. Disabled all debug options, Intel and NUMA disabled. Power-saving is not useful at all because im using a desktop pc, so the power supply is managed by AMD drivers and PSU itself. Everything works, atleast my environment where I use VMs, Waydroid and KVMs.
 
-`mirror.linux.ec/voidlinux` is the mirror I set on /etc/xbps.d/ because I live on Ecuador, so thats all
+`mirror.linux.ec/voidlinux` is the mirror I set on /etc/xbps.d/ because I live on Ecuador, so thats all. Initramfs is made with mkinitpcio instead of dracut. (Reducing 200MB to 32MB). Kernel is compiled using ZSTD instead of GZIP, increasing decompress speed.
+
+
+| Kernel | vmlinuz  | initramfs.img |
+| - | ------------- | ------------- |
+| 🦃 Linux Stable | 13MB  | 146MB  |
+| 🦃 Linux Mainline | 13MB  | 200MB  |
+| 🦃 Linux Zen | 9MB  | 32MB  |
+
+<br />
+<img width="1041" height="544" alt="image" src="https://github.com/user-attachments/assets/227f2d4b-c82d-43ab-959f-1b50c0eac744" />
