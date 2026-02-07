@@ -1,6 +1,6 @@
 # Template file for 'miniflux'
 pkgname=miniflux
-version=2.2.14
+version=2.2.16
 revision=1
 build_style=go
 go_import_path="miniflux.app/v2"
@@ -11,7 +11,7 @@ license="Apache-2.0"
 homepage="https://miniflux.app"
 changelog="https://raw.githubusercontent.com/miniflux/v2/main/ChangeLog"
 distfiles="https://github.com/miniflux/v2/archive/${version}.tar.gz"
-checksum=8cc9beadb74ac592dbb2d325500429c4ec95b21857773c16f8685ef7b9b807c1
+checksum=b6d015c3c73368425ac8e01fb67c98ae3e998a962a268cd956f57b1c8b023e17
 system_accounts="_miniflux"
 
 post_install() {
