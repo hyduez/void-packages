@@ -1086,6 +1086,8 @@ matching the `build_style` name, Example:
 - `texmf` For texmf zip/tarballs that need to go into /usr/share/texmf-dist. Includes
 duplicates handling.
 
+- `tree-sitter` for tree-sitter language grammars.
+
 <a id="build_helper"></a>
 ### build helper scripts
 
@@ -1135,6 +1137,10 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-makefile` style, respectively. This is for Qt5 packages.
 
 - `qmake6` is like `qmake` but for Qt6.
+
+> NOTE: the qmake build helpers internally use the `qmake_default_version` variable
+to select the default qmake implementation (Qt5 or Qt6). This variable is part of
+the helper workflow and is not commonly set in templates.
 
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
 for compiling cargo -sys crates.
