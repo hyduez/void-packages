@@ -6,6 +6,7 @@
 # exclude everything in root except files and directories from void-packages
 /*
 !/*.nix
+!journal.txt
 !/flake.lock
 !.envrc
 !/.editorconfig
