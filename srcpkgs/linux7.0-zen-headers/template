@@ -1,7 +1,7 @@
 # Template file for 'linux7.0-zen'
 pkgname=linux7.0-zen
 version=7.0.3
-revision=0
+revision=1
 short_desc="Linux kernel and modules (${version%.*} series)"
 maintainer="Duncaen <duncaen@voidlinux.org>"
 license="GPL-2.0-only"
@@ -34,7 +34,7 @@ preserve=yes
 hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
  pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd"
 
-_kernver="${version/rc/0-rc}_0"
+_kernver="${version/rc/0-rc}_${revision}"
 triggers="kernel-hooks"
 kernel_hooks_version="${_kernver}"
 
