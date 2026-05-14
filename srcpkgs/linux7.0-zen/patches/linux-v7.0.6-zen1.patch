@@ -62,6 +62,7 @@
  init/Kconfig                                    |   96 +-
  init/Makefile                                   |    2 +-
  init/init_task.c                                |   20 +
+ io_uring/zcrx.c                                 |    4 +
  kernel/Kconfig.preempt                          |    6 +-
  kernel/cgroup/cpuset.c                          |   10 +-
  kernel/cgroup/dmem.c                            |   90 +
@@ -71,7 +72,7 @@
  kernel/locking/rtmutex.c                        |   16 +-
  kernel/locking/ww_mutex.h                       |    2 +
  kernel/sched/Makefile                           |    5 +
- kernel/sched/{core.c => alt_core.c}             | 7146 ++++++-----------------
+ kernel/sched/{core.c => alt_core.c}             | 7228 +++++++----------------
  kernel/sched/alt_core.h                         |  197 +
  kernel/sched/alt_debug.c                        |   32 +
  kernel/sched/alt_sched.h                        | 1095 ++++
@@ -114,7 +115,7 @@
  net/ipv4/tcp_minisocks.c                        |    2 +
  net/ipv4/tcp_output.c                           |   62 +-
  net/ipv4/tcp_timer.c                            |    1 +
- 116 files changed, 8870 insertions(+), 5993 deletions(-)
+ 117 files changed, 8959 insertions(+), 5990 deletions(-)
 
 diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
 index 03a550630644f43d36b69ae79e6d66f42d75426d..6e9ca88aa498d6578b6f461deb4fb24c48314ce5 100644
@@ -280,13 +281,13 @@ index 0000000000000000000000000000000000000000..05c84eec0f31aca973839b12a918903e
 +priority boost from unblocking while background threads that do most of the
 +processing receive the priority penalty for using their entire timeslice.
 diff --git a/Makefile b/Makefile
-index 61f8019efd5af5cf5cc345e2d94677d3313ac873..411d2b01742573fbf227bc8841c13399c20eb942 100644
+index dbc380a9339ee7dc219f5a3353f2ff31b6060355..5e2670f7ae79f50c4991909cd1a36c76562de8a0 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -2,8 +2,8 @@
  VERSION = 7
  PATCHLEVEL = 0
- SUBLEVEL = 3
+ SUBLEVEL = 6
 -EXTRAVERSION =
 -NAME = Baby Opossum Posse
 +EXTRAVERSION =
@@ -294,7 +295,7 @@ index 61f8019efd5af5cf5cc345e2d94677d3313ac873..411d2b01742573fbf227bc8841c13399
  
  # *DOCUMENTATION*
  # To see a list of typical targets execute "make help"
-@@ -893,6 +893,9 @@ KBUILD_CFLAGS	+= -fno-delete-null-pointer-checks
+@@ -894,6 +894,9 @@ KBUILD_CFLAGS	+= -fno-delete-null-pointer-checks
  ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
  KBUILD_CFLAGS += -O2
  KBUILD_RUSTFLAGS += -Copt-level=2
@@ -304,7 +305,7 @@ index 61f8019efd5af5cf5cc345e2d94677d3313ac873..411d2b01742573fbf227bc8841c13399
  else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
  KBUILD_CFLAGS += -Os
  KBUILD_RUSTFLAGS += -Copt-level=s
-@@ -1103,11 +1106,6 @@ KBUILD_CFLAGS	+= -fno-strict-overflow
+@@ -1104,11 +1107,6 @@ KBUILD_CFLAGS	+= -fno-strict-overflow
  # Make sure -fstack-check isn't enabled (like gentoo apparently did)
  KBUILD_CFLAGS  += -fno-stack-check
  
@@ -3424,7 +3425,7 @@ index dd4869f1d736e26847578e81377e40504bbba90f..9d72457c4cb9d6f8e1289333e0d89216
  { }
  
 diff --git a/include/linux/mm.h b/include/linux/mm.h
-index abb4963c1f0640067d551b37d63a21905eda23ed..0a8998137b15991a0da3be973770d700132c2a40 100644
+index 0ceba2c86d9c1030567ca38d804f46698a84a462..b38061a59b0d2c8bdd9a5c6d275466c7b37bf053 100644
 --- a/include/linux/mm.h
 +++ b/include/linux/mm.h
 @@ -206,7 +206,7 @@ static inline void __mm_zero_struct_page(struct page *page)
@@ -3465,7 +3466,7 @@ index c6831c93cd6ee506310f826b276c1aed07d499a2..6d2eea8c713b6e482d53abfe4cb6c318
  	}
  }
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 5a5d3dbc9cdf332c46a96012fceb611a9e944e53..7127af44a6de0d216021540c647d777bac96776b 100644
+index 007a0b61856d4c1ff11c9c6584d439af5573c280..4a5f5830615f78f9d0d0685570b2b01f4fd56009 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
 @@ -847,41 +847,58 @@ struct task_struct {
@@ -3474,11 +3475,11 @@ index 5a5d3dbc9cdf332c46a96012fceb611a9e944e53..7127af44a6de0d216021540c647d777b
  	int				on_cpu;
 +
  	struct __call_single_node	wake_entry;
-+#ifndef CONFIG_SCHED_ALT
  	unsigned int			wakee_flips;
  	unsigned long			wakee_flip_decay_ts;
  	struct task_struct		*last_wakee;
  
++#ifndef CONFIG_SCHED_ALT
  	/*
  	 * recent_used_cpu is initially set as the last CPU used by a task
  	 * that wakes affine another task. Waker/wakee relationships can
@@ -3571,7 +3572,7 @@ index 5a5d3dbc9cdf332c46a96012fceb611a9e944e53..7127af44a6de0d216021540c647d777b
  
  	struct mm_struct		*mm;
  	struct mm_struct		*active_mm;
-@@ -1659,6 +1682,15 @@ static inline bool sched_proxy_exec(void)
+@@ -1663,6 +1686,15 @@ static inline bool sched_proxy_exec(void)
  }
  #endif
  
@@ -3587,7 +3588,7 @@ index 5a5d3dbc9cdf332c46a96012fceb611a9e944e53..7127af44a6de0d216021540c647d777b
  #define TASK_REPORT_IDLE	(TASK_REPORT + 1)
  #define TASK_REPORT_MAX		(TASK_REPORT_IDLE << 1)
  
-@@ -2276,7 +2308,11 @@ static inline void set_task_cpu(struct task_struct *p, unsigned int cpu)
+@@ -2280,7 +2312,11 @@ static inline void set_task_cpu(struct task_struct *p, unsigned int cpu)
  
  static inline bool task_is_runnable(struct task_struct *p)
  {
@@ -3599,7 +3600,7 @@ index 5a5d3dbc9cdf332c46a96012fceb611a9e944e53..7127af44a6de0d216021540c647d777b
  }
  
  extern bool sched_task_on_rq(struct task_struct *p);
-@@ -2397,59 +2433,99 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
+@@ -2401,59 +2437,99 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
  #endif
  #define this_rq_pinned() (*(unsigned int *)((void *)this_rq_raw() + RQ_nr_pinned))
  
@@ -4498,6 +4499,21 @@ index 5c838757fc10eb769c263025da088e16af48e336..3c9c41183b491fbb1d91ee4d54925490
  #ifdef CONFIG_CGROUP_SCHED
  	.sched_task_group = &root_task_group,
  #endif
+diff --git a/io_uring/zcrx.c b/io_uring/zcrx.c
+index af4b88e106abf4db697cf518f76651f96d684c30..ba509479fc107864c26be4c6b3d50d94f2ed51f1 100644
+--- a/io_uring/zcrx.c
++++ b/io_uring/zcrx.c
+@@ -587,6 +587,10 @@ static void io_zcrx_return_niov_freelist(struct net_iov *niov)
+ 	struct io_zcrx_area *area = io_zcrx_iov_to_area(niov);
+ 
+ 	spin_lock_bh(&area->freelist_lock);
++	if (WARN_ON_ONCE(area->free_count >= area->nia.num_niovs)) {
++		spin_unlock_bh(&area->freelist_lock);
++		return;
++	}
+ 	area->freelist[area->free_count++] = net_iov_idx(niov);
+ 	spin_unlock_bh(&area->freelist_lock);
+ }
 diff --git a/kernel/Kconfig.preempt b/kernel/Kconfig.preempt
 index 88c594c6d7fcd5507c6f945b775cb5f87dae81fe..67aaddc46d56a1f0d8c6a7df3e565c767bb65b93 100644
 --- a/kernel/Kconfig.preempt
@@ -4766,10 +4782,10 @@ index ede3117fa7d413a40105af85be6da21583cbaa88..623e97607e8c6a3dcf6fdafa8f7cde6f
  	release_thread(p);
  	/*
 diff --git a/kernel/fork.c b/kernel/fork.c
-index bc2bf58b93b6524ca8510474634c7e921ac25f9a..a5dc22a9d2a680f66d24b2b5517c1a6e21889492 100644
+index 2383c25b9fd4972528c4f0e2f4c497aee362fb3c..a3fdff312d66f7777ad54b9642bacaad1972a9cd 100644
 --- a/kernel/fork.c
 +++ b/kernel/fork.c
-@@ -124,6 +124,16 @@
+@@ -125,6 +125,16 @@
  
  #include <kunit/visibility.h>
  
@@ -4786,7 +4802,7 @@ index bc2bf58b93b6524ca8510474634c7e921ac25f9a..a5dc22a9d2a680f66d24b2b5517c1a6e
  /*
   * Minimum number of threads to boot the kernel
   */
-@@ -2028,6 +2038,11 @@ __latent_entropy struct task_struct *copy_process(
+@@ -2029,6 +2039,11 @@ __latent_entropy struct task_struct *copy_process(
  			return ERR_PTR(-EINVAL);
  	}
  
@@ -4798,7 +4814,7 @@ index bc2bf58b93b6524ca8510474634c7e921ac25f9a..a5dc22a9d2a680f66d24b2b5517c1a6e
  	/*
  	 * Force any signals received before this point to be delivered
  	 * before the fork happens.  Collect up signals sent to multiple
-@@ -3069,6 +3084,10 @@ static int check_unshare_flags(unsigned long unshare_flags)
+@@ -3071,6 +3086,10 @@ static int check_unshare_flags(unsigned long unshare_flags)
  		if (!current_is_single_threaded())
  			return -EINVAL;
  	}
@@ -4809,7 +4825,7 @@ index bc2bf58b93b6524ca8510474634c7e921ac25f9a..a5dc22a9d2a680f66d24b2b5517c1a6e
  
  	return 0;
  }
-@@ -3299,6 +3318,15 @@ static const struct ctl_table fork_sysctl_table[] = {
+@@ -3301,6 +3320,15 @@ static const struct ctl_table fork_sysctl_table[] = {
  		.mode		= 0644,
  		.proc_handler	= sysctl_max_threads,
  	},
@@ -4826,7 +4842,7 @@ index bc2bf58b93b6524ca8510474634c7e921ac25f9a..a5dc22a9d2a680f66d24b2b5517c1a6e
  
  static int __init init_fork_sysctl(void)
 diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
-index c80902eacd797c669dedcf10966a8cff38524b50..b1d388145968178f9069f167e298635e5e479066 100644
+index e6c6dd0868873e3f919203ff9c2b6058fedf7a51..ab887267d06bf99e4e601b9b8fc7e12fcf75f03a 100644
 --- a/kernel/locking/rtmutex.c
 +++ b/kernel/locking/rtmutex.c
 @@ -366,65 +366,77 @@ waiter_update_prio(struct rt_mutex_waiter *waiter, struct task_struct *task)
@@ -4952,10 +4968,10 @@ diff --git a/kernel/sched/core.c b/kernel/sched/alt_core.c
 similarity index 57%
 copy from kernel/sched/core.c
 copy to kernel/sched/alt_core.c
-index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86efe1364261 100644
+index 14e947bcb3e5ce38ad28852283525333af23e70e..24ffb7bfee798a7bd491380b3dbb58232179a24c 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/alt_core.c
-@@ -1,534 +1,217 @@
+@@ -1,534 +1,218 @@
 -// SPDX-License-Identifier: GPL-2.0-only
  /*
 - *  kernel/sched/core.c
@@ -5276,6 +5292,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 + * domain, see cpus_share_cache().
 + */
 +static DEFINE_PER_CPU_READ_MOSTLY(int, sd_llc_id);
++static DEFINE_PER_CPU_READ_MOSTLY(int, sd_llc_size);
 +
 +DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 +
@@ -5611,7 +5628,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  /* need a wrapper since we may need to trace from modules */
  EXPORT_TRACEPOINT_SYMBOL(sched_set_state_tp);
  
-@@ -579,7 +262,7 @@ EXPORT_SYMBOL(__trace_set_current_state);
+@@ -579,7 +263,7 @@ EXPORT_SYMBOL(__trace_set_current_state);
   *				p->se.load, p->rt_priority,
   *				p->dl.dl_{runtime, deadline, period, flags, bw, density}
   *  - sched_setnuma():		p->numa_preferred_nid
@@ -5620,7 +5637,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   *  - uclamp_update_active()	p->uclamp*
   *
   * p->state <- TASK_*:
-@@ -636,153 +319,146 @@ EXPORT_SYMBOL(__trace_set_current_state);
+@@ -636,153 +320,146 @@ EXPORT_SYMBOL(__trace_set_current_state);
   *
   */
  
@@ -5849,7 +5866,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  static void update_rq_clock_task(struct rq *rq, s64 delta)
  {
  /*
-@@ -836,125 +512,265 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
+@@ -836,125 +513,265 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
  	rq->clock_task += delta;
  
  #ifdef CONFIG_HAVE_SCHED_AVG_IRQ
@@ -6198,7 +6215,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  /*
   * try_cmpxchg based fetch_or() macro so it works for different integer types:
-@@ -1002,18 +818,18 @@ static bool set_nr_if_polling(struct task_struct *p)
+@@ -1002,18 +819,18 @@ static bool set_nr_if_polling(struct task_struct *p)
  	return true;
  }
  
@@ -6219,7 +6236,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  static bool __wake_q_add(struct wake_q_head *head, struct task_struct *task)
  {
-@@ -1109,13 +925,13 @@ void wake_up_q(struct wake_q_head *head)
+@@ -1109,13 +926,13 @@ void wake_up_q(struct wake_q_head *head)
   * might also involve a cross-CPU call to trigger the scheduler on
   * the target CPU.
   */
@@ -6235,7 +6252,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  	/*
  	 * Always immediately preempt the idle task; no point in delaying doing
-@@ -1151,100 +967,101 @@ void __trace_set_need_resched(struct task_struct *curr, int tif)
+@@ -1151,100 +968,101 @@ void __trace_set_need_resched(struct task_struct *curr, int tif)
  }
  EXPORT_SYMBOL_GPL(__trace_set_need_resched);
  
@@ -6356,7 +6373,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  {
  	struct rq *rq = cpu_rq(cpu);
  
-@@ -1279,1028 +1096,147 @@ static void wake_up_idle_cpu(int cpu)
+@@ -1279,1028 +1097,147 @@ static void wake_up_idle_cpu(int cpu)
  		trace_sched_wake_idle_without_ipi(cpu);
  }
  
@@ -7400,7 +7417,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  		/*
  		 * If it changed from the expected state, bail out now.
-@@ -2347,72 +1283,278 @@ unsigned long wait_task_inactive(struct task_struct *p, unsigned int match_state
+@@ -2347,72 +1284,278 @@ unsigned long wait_task_inactive(struct task_struct *p, unsigned int match_state
  	return ncsw;
  }
  
@@ -7700,7 +7717,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  	/* KTHREAD_IS_PER_CPU is always allowed. */
  	if (kthread_is_per_cpu(p))
-@@ -2445,277 +1587,135 @@ static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
+@@ -2445,277 +1588,135 @@ static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
   *
   * Returns (locked) new rq. Old rq's lock is released.
   */
@@ -8009,7 +8026,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  	/*
  	 * Because this is called with p->pi_lock held, it is not possible
-@@ -2753,7 +1753,7 @@ int dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src,
+@@ -2753,7 +1754,7 @@ int dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src,
  	 * Use pi_lock to protect content of user_cpus_ptr
  	 *
  	 * Though unlikely, user_cpus_ptr can be reset to NULL by a concurrent
@@ -8018,7 +8035,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	 */
  	raw_spin_lock_irqsave(&src->pi_lock, flags);
  	if (src->user_cpus_ptr) {
-@@ -2782,245 +1782,304 @@ void release_user_cpus_ptr(struct task_struct *p)
+@@ -2782,245 +1783,391 @@ void release_user_cpus_ptr(struct task_struct *p)
  	kfree(clear_user_cpus_ptr(p));
  }
  
@@ -8374,12 +8391,65 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 +
 +DEFINE_STATIC_CALL(sched_idle_select_func, cpumask_and);
 +
-+static int
-+wake_affine_idle(int this_cpu, int prev_cpu, int sync)
++static void record_wakee(struct task_struct *p)
 +{
  	/*
 -	 * Block the original owner of &pending until all subsequent callers
 -	 * have seen the completion and decremented the refcount
++	 * Only decay a single time; tasks that have less then 1 wakeup per
++	 * jiffy will not have built up many flips.
+ 	 */
+-	wait_var_event(&my_pending.refs, !refcount_read(&my_pending.refs));
++	if (time_after(jiffies, current->wakee_flip_decay_ts + HZ)) {
++		current->wakee_flips >>= 1;
++		current->wakee_flip_decay_ts = jiffies;
++	}
+ 
+-	/* ARGH */
+-	WARN_ON_ONCE(my_pending.stop_pending);
+-
+-	return 0;
++	if (current->last_wakee != p) {
++		current->last_wakee = p;
++		current->wakee_flips++;
++	}
+ }
+ 
+ /*
+- * Called with both p->pi_lock and rq->lock held; drops both before returning.
++ * Detect M:N waker/wakee relationships via a switching-frequency heuristic.
++ *
++ * A waker of many should wake a different task than the one last awakened
++ * at a frequency roughly N times higher than one of its wakees.
++ *
++ * In order to determine whether we should let the load spread vs consolidating
++ * to shared cache, we look for a minimum 'flip' frequency of llc_size in one
++ * partner, and a factor of lls_size higher frequency in the other.
++ *
++ * With both conditions met, we can be relatively sure that the relationship is
++ * non-monogamous, with partner count exceeding socket size.
++ *
++ * Waker/wakee being client/server, worker/dispatcher, interrupt source or
++ * whatever is irrelevant, spread criteria is apparent partner count exceeds
++ * socket size.
+  */
++static int wake_wide(struct task_struct *p)
++{
++	unsigned int master = current->wakee_flips;
++	unsigned int slave = p->wakee_flips;
++	int factor = __this_cpu_read(sd_llc_size);
++
++	if (master < slave)
++		swap(master, slave);
++	if (slave < factor || master < slave * factor)
++		return 0;
++	return 1;
++}
++
++static int
++wake_affine_idle(int this_cpu, int prev_cpu, int sync)
++{
++	/*
 +	 * If this_cpu is idle, it implies the wakeup is from interrupt
 +	 * context. Only allow the move if cache is shared. Otherwise an
 +	 * interrupt intensive workload could force all tasks onto one
@@ -8390,16 +8460,20 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 +	 * is more important than cache hot data on the prev_cpu and from
 +	 * a cpufreq perspective, it's better to have higher utilisation
 +	 * on one CPU.
- 	 */
--	wait_var_event(&my_pending.refs, !refcount_read(&my_pending.refs));
++	 */
 +	if (available_idle_cpu(this_cpu) && cpus_share_cache(this_cpu, prev_cpu))
 +		return available_idle_cpu(prev_cpu) ? prev_cpu : this_cpu;
- 
--	/* ARGH */
--	WARN_ON_ONCE(my_pending.stop_pending);
++
++	/*
++	 * If the previous CPU is cache affine and idle, don't be stupid.
++	 */
++	if (prev_cpu != this_cpu && cpus_share_cache(this_cpu, prev_cpu) &&
++	    available_idle_cpu(prev_cpu))
++		return prev_cpu;
++
 +	if (sync) {
 +		struct rq *rq = cpu_rq(this_cpu);
- 
++
 +		if (rq->nr_running == 1)
 +			return this_cpu;
 +	}
@@ -8412,25 +8486,58 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 +
 +static inline int select_task_rq(struct task_struct *p, int wake_flags)
 +{
++	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
 +	cpumask_t allow_mask, mask;
++	int cpu = smp_processor_id();
 +	int prev_cpu = task_cpu(p);
++	int new_cpu = prev_cpu;
++	int want_affine = 0;
++	bool wakee_migratable = p->nr_cpus_allowed > 1 && !is_migration_disabled(p);
 +
-+	if (unlikely(!cpumask_and(&allow_mask, p->cpus_ptr, cpu_active_mask)))
-+		return select_fallback_rq(prev_cpu, p);
++	/*
++	 * required for stable ->cpus_allowed
++	 */
++	lockdep_assert_held(&p->pi_lock);
++	if (wake_flags & WF_TTWU) {
++		if (wakee_migratable)
++			record_wakee(p);
 +
-+	if ((wake_flags & WF_SYNC) && !(current->flags & PF_EXITING)) {
-+		int affine_cpu = wake_affine_idle(smp_processor_id(), prev_cpu, true);
++		if ((wake_flags & WF_CURRENT_CPU) &&
++		    cpumask_test_cpu(cpu, p->cpus_ptr)) {
++			new_cpu = cpu;
++			goto out;
++		}
++
++		want_affine = wakee_migratable && !wake_wide(p) &&
++			      cpumask_test_cpu(cpu, p->cpus_ptr);
++	}
++
++	if (unlikely(!cpumask_and(&allow_mask, p->cpus_ptr, cpu_active_mask))) {
++		new_cpu = select_fallback_rq(prev_cpu, p);
++		goto out;
++	}
++
++	if (sync && want_affine) {
++		int affine_cpu = wake_affine_idle(cpu, prev_cpu, sync);
 +
 +		if (affine_cpu < nr_cpu_ids &&
-+		    cpumask_test_cpu(affine_cpu, &allow_mask))
-+			return affine_cpu;
++		    cpumask_test_cpu(affine_cpu, &allow_mask)) {
++			new_cpu = affine_cpu;
++			goto out;
++		}
 +	}
 +
 +	if (static_call(sched_idle_select_func)(&mask, &allow_mask, sched_idle_mask)	||
 +	    preempt_mask_check(&mask, &allow_mask, task_sched_prio(p)))
-+		return best_mask_cpu(prev_cpu, &mask);
++		new_cpu = best_mask_cpu(prev_cpu, &mask);
++	else
++		new_cpu = best_mask_cpu(prev_cpu, &allow_mask);
 +
-+	return best_mask_cpu(prev_cpu, &allow_mask);
++out:
++	if (unlikely(!is_cpu_allowed(p, new_cpu)))
++		new_cpu = select_fallback_rq(prev_cpu, p);
++
++	return new_cpu;
 +}
 +
 +void sched_set_stop_task(int cpu, struct task_struct *stop)
@@ -8508,12 +8615,9 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 +	}
 +	__task_access_unlock(p, lock);
 +	raw_spin_unlock_irqrestore(&p->pi_lock, irq_flags);
- 	return 0;
- }
- 
--/*
-- * Called with both p->pi_lock and rq->lock held; drops both before returning.
-- */
++	return 0;
++}
++
  static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
  					 struct affinity_context *ctx,
  					 struct rq *rq,
@@ -8530,7 +8634,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	int ret = 0;
  
  	if (kthread || is_migration_disabled(p)) {
-@@ -3051,67 +2110,57 @@ static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
+@@ -3051,67 +2198,57 @@ static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
  		goto out;
  	}
  
@@ -8615,7 +8719,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  
  int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask)
-@@ -3142,31 +2191,24 @@ static int restrict_cpus_allowed_ptr(struct task_struct *p,
+@@ -3142,31 +2279,24 @@ static int restrict_cpus_allowed_ptr(struct task_struct *p,
  		.new_mask  = new_mask,
  		.flags     = 0,
  	};
@@ -8654,7 +8758,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	return err;
  }
  
-@@ -3238,446 +2280,53 @@ void relax_compatible_cpus_allowed_ptr(struct task_struct *p)
+@@ -3238,446 +2368,53 @@ void relax_compatible_cpus_allowed_ptr(struct task_struct *p)
  	WARN_ON_ONCE(ret);
  }
  
@@ -9109,7 +9213,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  
  /*
-@@ -3707,51 +2356,49 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
+@@ -3707,51 +2444,49 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
   */
  static int ttwu_runnable(struct task_struct *p, int wake_flags)
  {
@@ -9168,7 +9272,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	}
  
  	/*
-@@ -3797,65 +2444,11 @@ static void __ttwu_queue_wakelist(struct task_struct *p, int cpu, int wake_flags
+@@ -3797,65 +2532,11 @@ static void __ttwu_queue_wakelist(struct task_struct *p, int cpu, int wake_flags
  	p->sched_remote_wakeup = !!(wake_flags & WF_MIGRATED);
  
  	WRITE_ONCE(rq->ttwu_pending, 1);
@@ -9234,7 +9338,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	/*
  	 * Do not complicate things with the async wake_list while the CPU is
  	 * in hotplug state.
-@@ -3896,46 +2489,83 @@ static inline bool ttwu_queue_cond(struct task_struct *p, int cpu)
+@@ -3896,46 +2577,83 @@ static inline bool ttwu_queue_cond(struct task_struct *p, int cpu)
  
  static bool ttwu_queue_wakelist(struct task_struct *p, int cpu, int wake_flags)
  {
@@ -9329,7 +9433,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   */
  static __always_inline
  bool ttwu_state_match(struct task_struct *p, unsigned int state, int *success)
-@@ -3985,7 +2615,8 @@ bool ttwu_state_match(struct task_struct *p, unsigned int state, int *success)
+@@ -3985,7 +2703,8 @@ bool ttwu_state_match(struct task_struct *p, unsigned int state, int *success)
   *     rq(c1)->lock (if not at the same time, then in that order).
   *  C) LOCK of the rq(c1)->lock scheduling in task
   *
@@ -9339,7 +9443,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   * Note: the CPU doing B need not be c0 or c1
   *
   * Example:
-@@ -4047,9 +2678,16 @@ bool ttwu_state_match(struct task_struct *p, unsigned int state, int *success)
+@@ -4047,9 +2766,16 @@ bool ttwu_state_match(struct task_struct *p, unsigned int state, int *success)
   *   UNLOCK rq(0)->lock
   *
   *
@@ -9359,16 +9463,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   */
  
  /**
-@@ -4094,25 +2732,18 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
- 	guard(preempt)();
- 	int cpu, success = 0;
- 
--	wake_flags |= WF_TTWU;
--
- 	if (p == current) {
- 		/*
- 		 * We're waking current, this means 'p->on_rq' and 'task_cpu(p)
- 		 * == smp_processor_id()'. Together this means we can special
+@@ -4103,16 +2829,11 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
  		 * case the whole 'p->on_rq && ttwu_runnable()' case below
  		 * without taking any locks.
  		 *
@@ -9385,7 +9480,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  		if (!ttwu_state_match(p, state, &success))
  			goto out;
  
-@@ -4206,36 +2837,42 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
+@@ -4206,36 +2927,38 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
  		 *   STORE p->cpu = @cpu
  		 * __schedule() (switch to task 'p')
  		 *   LOCK rq->lock
@@ -9416,11 +9511,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 -		if (task_cpu(p) != cpu) {
 +		sched_task_ttwu(p);
 +
-+		if ((wake_flags & WF_CURRENT_CPU) &&
-+		    cpumask_test_cpu(smp_processor_id(), p->cpus_ptr))
-+			cpu = smp_processor_id();
-+		else
-+			cpu = select_task_rq(p, wake_flags);
++		cpu = select_task_rq(p, wake_flags);
 +
 +		if (cpu != task_cpu(p)) {
  			if (p->in_iowait) {
@@ -9433,7 +9524,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  			set_task_cpu(p, cpu);
  		}
  
-@@ -4297,30 +2934,29 @@ static bool __task_needs_rq_lock(struct task_struct *p)
+@@ -4297,30 +3020,29 @@ static bool __task_needs_rq_lock(struct task_struct *p)
   */
  int task_call_func(struct task_struct *p, task_call_f func, void *arg)
  {
@@ -9479,7 +9570,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  	raw_spin_unlock_irqrestore(&p->pi_lock, rf.flags);
  	return ret;
-@@ -4387,119 +3023,127 @@ int wake_up_state(struct task_struct *p, unsigned int state)
+@@ -4387,119 +3109,127 @@ int wake_up_state(struct task_struct *p, unsigned int state)
   * __sched_fork() is basic setup which is also used by sched_init() to
   * initialize the boot CPU's idle task.
   */
@@ -9690,7 +9781,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  #ifdef CONFIG_SCHEDSTATS
  
-@@ -4578,224 +3222,49 @@ static const struct ctl_table sched_core_sysctls[] = {
+@@ -4578,224 +3308,49 @@ static const struct ctl_table sched_core_sysctls[] = {
  		.extra2         = SYSCTL_ONE,
  	},
  #endif /* CONFIG_SCHEDSTATS */
@@ -9854,7 +9945,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 -	scx_post_fork(p);
 -}
 -
--unsigned long to_ratio(u64 period, u64 runtime)
+-u64 to_ratio(u64 period, u64 runtime)
 -{
 -	if (runtime == RUNTIME_INF)
 -		return BW_UNIT;
@@ -9929,7 +10020,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  
  #ifdef CONFIG_PREEMPT_NOTIFIERS
-@@ -4897,28 +3366,28 @@ static inline void prepare_task(struct task_struct *next)
+@@ -4897,28 +3452,28 @@ static inline void prepare_task(struct task_struct *next)
  	WRITE_ONCE(next->on_cpu, 1);
  }
  
@@ -9961,7 +10052,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  	while (head) {
  		func = (void (*)(struct rq *))head->func;
-@@ -4948,7 +3417,7 @@ struct balance_callback balance_push_callback = {
+@@ -4948,7 +3503,7 @@ struct balance_callback balance_push_callback = {
  	.func = balance_push,
  };
  
@@ -9970,7 +10061,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  __splice_balance_callbacks(struct rq *rq, bool split)
  {
  	struct balance_callback *head = rq->balance_callback;
-@@ -4978,139 +3447,125 @@ struct balance_callback *splice_balance_callbacks(struct rq *rq)
+@@ -4978,139 +3533,125 @@ struct balance_callback *splice_balance_callbacks(struct rq *rq)
  	return __splice_balance_callbacks(rq, true);
  }
  
@@ -10125,7 +10216,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  {
  	struct rq *rq = this_rq();
  	struct mm_struct *mm = rq->prev_mm;
-@@ -5179,34 +3634,24 @@ static struct rq *finish_task_switch(struct task_struct *prev)
+@@ -5179,34 +3720,24 @@ static struct rq *finish_task_switch(struct task_struct *prev)
  		membarrier_mm_sync_core_before_usermode(mm);
  		mmdrop_lazy_tlb_sched(mm);
  	}
@@ -10161,7 +10252,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  {
  	/*
  	 * New tasks start with FORK_PREEMPT_COUNT, see there and
-@@ -5237,8 +3682,7 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
+@@ -5237,8 +3768,7 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
   */
  static __always_inline struct rq *
  context_switch(struct rq *rq, struct task_struct *prev,
@@ -10171,12 +10262,9 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  {
  	prepare_task_switch(rq, prev, next);
  
-@@ -5290,19 +3734,19 @@ context_switch(struct rq *rq, struct task_struct *prev,
- 	 * Tell rseq that the task was scheduled in. Must be after
- 	 * switch_mm_cid() to get the TIF flag set.
+@@ -5292,17 +3822,17 @@ context_switch(struct rq *rq, struct task_struct *prev,
  	 */
--	rseq_sched_switch_event(next);
-+	rseq_sched_switch_event(prev);
+ 	rseq_sched_switch_event(next);
  
 -	prepare_lock_switch(rq, next, rf);
 +	prepare_lock_switch(rq, next);
@@ -10194,7 +10282,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   *
   * externally visible scheduler statistics: current number of runnable
   * threads, total number of context switches performed since bootup.
-@@ -5406,94 +3850,96 @@ unsigned int nr_iowait(void)
+@@ -5406,94 +3936,96 @@ unsigned int nr_iowait(void)
  
  /*
   * sched_exec - execve() is a valuable balancing opportunity, because at
@@ -10331,7 +10419,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  static u64 cpu_resched_latency(struct rq *rq)
  {
  	int latency_warn_ms = READ_ONCE(sysctl_resched_latency_warn_ms);
-@@ -5545,52 +3991,36 @@ __setup("resched_latency_warn_ms=", setup_resched_latency_warn_ms);
+@@ -5545,52 +4077,36 @@ __setup("resched_latency_warn_ms=", setup_resched_latency_warn_ms);
   */
  void sched_tick(void)
  {
@@ -10391,7 +10479,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  
  #ifdef CONFIG_NO_HZ_FULL
-@@ -5646,27 +4076,21 @@ static void sched_tick_remote(struct work_struct *work)
+@@ -5646,27 +4162,21 @@ static void sched_tick_remote(struct work_struct *work)
  	 * of when exactly it is running.
  	 */
  	if (tick_nohz_tick_stopped_cpu(cpu)) {
@@ -10422,7 +10510,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  			calc_load_nohz_remote(rq);
  		}
-@@ -5736,7 +4160,7 @@ static inline void sched_tick_stop(int cpu) { }
+@@ -5736,7 +4246,7 @@ static inline void sched_tick_stop(int cpu) { }
  #endif /* !CONFIG_NO_HZ_FULL */
  
  #if defined(CONFIG_PREEMPTION) && (defined(CONFIG_DEBUG_PREEMPT) || \
@@ -10431,7 +10519,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  /*
   * If the value passed in is equal to the current preempt count
   * then we just disabled preemption. Start timing the latency.
-@@ -5882,848 +4306,281 @@ static inline void schedule_debug(struct task_struct *prev, bool preempt)
+@@ -5882,848 +4392,281 @@ static inline void schedule_debug(struct task_struct *prev, bool preempt)
  	schedstat_inc(this_rq()->sched_count);
  }
  
@@ -11500,7 +11588,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   *
   * The main means of driving the scheduler and thus entering this function are:
   *
-@@ -6772,151 +4629,121 @@ static void __sched notrace __schedule(int sched_mode)
+@@ -6772,151 +4715,121 @@ static void __sched notrace __schedule(int sched_mode)
  	bool is_switch = false;
  	unsigned long *switch_count;
  	unsigned long prev_state;
@@ -11670,7 +11758,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	}
  	trace_sched_exit_tp(is_switch);
  }
-@@ -7116,6 +4943,7 @@ asmlinkage __visible void __sched notrace preempt_schedule(void)
+@@ -7116,6 +5029,7 @@ asmlinkage __visible void __sched notrace preempt_schedule(void)
  	 */
  	if (likely(!preemptible()))
  		return;
@@ -11678,7 +11766,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	preempt_schedule_common();
  }
  NOKPROBE_SYMBOL(preempt_schedule);
-@@ -7195,25 +5023,25 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
+@@ -7195,25 +5109,25 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
  EXPORT_SYMBOL_GPL(preempt_schedule_notrace);
  
  #ifdef CONFIG_PREEMPT_DYNAMIC
@@ -11706,7 +11794,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  #endif /* CONFIG_PREEMPTION */
  
-@@ -7251,22 +5079,6 @@ int default_wake_function(wait_queue_entry_t *curr, unsigned mode, int wake_flag
+@@ -7251,22 +5165,6 @@ int default_wake_function(wait_queue_entry_t *curr, unsigned mode, int wake_flag
  }
  EXPORT_SYMBOL(default_wake_function);
  
@@ -11729,7 +11817,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  #ifdef CONFIG_RT_MUTEXES
  
  /*
-@@ -7308,110 +5120,67 @@ void rt_mutex_post_schedule(void)
+@@ -7308,110 +5206,67 @@ void rt_mutex_post_schedule(void)
   */
  void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
  {
@@ -11848,7 +11936,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  #endif /* CONFIG_RT_MUTEXES */
  
-@@ -7450,8 +5219,8 @@ EXPORT_SYMBOL(__cond_resched);
+@@ -7450,8 +5305,8 @@ EXPORT_SYMBOL(__cond_resched);
  DEFINE_STATIC_CALL_RET0(cond_resched, __cond_resched);
  EXPORT_STATIC_CALL_TRAMP(cond_resched);
  
@@ -11859,7 +11947,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  DEFINE_STATIC_CALL_RET0(might_resched, __cond_resched);
  EXPORT_STATIC_CALL_TRAMP(might_resched);
  # elif defined(CONFIG_HAVE_PREEMPT_DYNAMIC_KEY)
-@@ -7479,7 +5248,7 @@ EXPORT_SYMBOL(dynamic_might_resched);
+@@ -7479,7 +5334,7 @@ EXPORT_SYMBOL(dynamic_might_resched);
   * __cond_resched_lock() - if a reschedule is pending, drop the given lock,
   * call schedule, and on return reacquire the lock.
   *
@@ -11868,7 +11956,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   * operations here to prevent schedule() from being called twice (once via
   * spin_unlock(), once by hand).
   */
-@@ -7615,28 +5384,29 @@ int sched_dynamic_mode(const char *str)
+@@ -7615,28 +5470,29 @@ int sched_dynamic_mode(const char *str)
  	return -EINVAL;
  }
  
@@ -11900,7 +11988,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	preempt_dynamic_enable(might_resched);
  	preempt_dynamic_enable(preempt_schedule);
  	preempt_dynamic_enable(preempt_schedule_notrace);
-@@ -7667,7 +5437,7 @@ static void __sched_dynamic_update(int mode)
+@@ -7667,7 +5523,7 @@ static void __sched_dynamic_update(int mode)
  		break;
  
  	case preempt_dynamic_full:
@@ -11909,7 +11997,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  		preempt_dynamic_disable(might_resched);
  		preempt_dynamic_enable(preempt_schedule);
  		preempt_dynamic_enable(preempt_schedule_notrace);
-@@ -7811,9 +5581,13 @@ void io_schedule_finish(int token)
+@@ -7811,9 +5667,13 @@ void io_schedule_finish(int token)
  }
  
  /*
@@ -11924,7 +12012,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  long __sched io_schedule_timeout(long timeout)
  {
  	int token;
-@@ -7861,7 +5635,6 @@ void sched_show_task(struct task_struct *p)
+@@ -7861,7 +5721,6 @@ void sched_show_task(struct task_struct *p)
  
  	print_worker_info(KERN_INFO, p);
  	print_stop_info(KERN_INFO, p);
@@ -11932,7 +12020,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	show_stack(p, NULL, KERN_INFO);
  	put_task_stack(p);
  }
-@@ -7910,150 +5683,121 @@ void show_state_filter(unsigned int state_filter)
+@@ -7910,150 +5769,121 @@ void show_state_filter(unsigned int state_filter)
  			sched_show_task(p);
  	}
  
@@ -12115,7 +12203,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  #ifdef CONFIG_HOTPLUG_CPU
  /*
   * Invoked on the outgoing CPU in context of the CPU hotplug thread
-@@ -8089,40 +5833,30 @@ static int __balance_push_cpu_stop(void *arg)
+@@ -8089,40 +5919,30 @@ static int __balance_push_cpu_stop(void *arg)
  	int cpu;
  
  	scoped_guard (raw_spinlock_irq, &p->pi_lock) {
@@ -12158,7 +12246,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  	/*
  	 * Ensure the thing is persistent until balance_push_set(.on = false);
-@@ -8156,29 +5890,29 @@ static void balance_push(struct rq *rq)
+@@ -8156,29 +5976,29 @@ static void balance_push(struct rq *rq)
  		 */
  		if (!rq->nr_running && !rq_has_pinned_tasks(rq) &&
  		    rcuwait_active(&rq->hotplug_wait)) {
@@ -12192,7 +12280,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  
  static void balance_push_set(int cpu, bool on)
-@@ -8213,73 +5947,49 @@ static void balance_hotplug_wait(void)
+@@ -8213,73 +6033,49 @@ static void balance_hotplug_wait(void)
  
  #else /* !CONFIG_HOTPLUG_CPU: */
  
@@ -12283,7 +12371,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  
  /*
-@@ -8314,144 +6024,126 @@ static void cpuset_cpu_active(void)
+@@ -8314,144 +6110,126 @@ static void cpuset_cpu_active(void)
  		 */
  		cpuset_force_rebuild();
  	}
@@ -12450,7 +12538,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	sched_rq_cpu_starting(cpu);
  	sched_tick_start(cpu);
  	return 0;
-@@ -8499,73 +6191,106 @@ static void dump_rq_tasks(struct rq *rq, const char *loglvl)
+@@ -8499,73 +6277,108 @@ static void dump_rq_tasks(struct rq *rq, const char *loglvl)
  	struct task_struct *g, *p;
  	int cpu = cpu_of(rq);
  
@@ -12512,6 +12600,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 +		cpumask_copy(tmp, cpu_possible_mask);
 +		per_cpu(sched_cpu_llc_mask, cpu) = tmp;
 +		per_cpu(sched_cpu_topo_end_mask, cpu) = ++tmp;
++		per_cpu(sd_llc_size, cpu) = cpumask_weight(cpu_possible_mask);
 +	}
 +}
 +
@@ -12541,6 +12630,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
 +		TOPOLOGY_CPUMASK(cluster, topology_cluster_cpumask(cpu), false);
 +
 +		per_cpu(sd_llc_id, cpu) = cpumask_first(cpu_coregroup_mask(cpu));
++		per_cpu(sd_llc_size, cpu) = cpumask_weight(cpu_coregroup_mask(cpu));
 +		per_cpu(sched_cpu_llc_mask, cpu) = topo;
 +		TOPOLOGY_CPUMASK(coregroup, cpu_coregroup_mask(cpu), false);
 +
@@ -12586,7 +12676,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  
  	sched_smp_initialized = true;
  }
-@@ -8594,208 +6319,95 @@ LIST_HEAD(task_groups);
+@@ -8594,208 +6407,95 @@ LIST_HEAD(task_groups);
  
  /* Cacheline aligned slab cache for task_group */
  static struct kmem_cache *task_group_cache __ro_after_init;
@@ -12820,7 +12910,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  }
  
  #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
-@@ -8854,7 +6466,6 @@ void __might_resched(const char *file, int line, unsigned int offsets)
+@@ -8854,7 +6554,6 @@ void __might_resched(const char *file, int line, unsigned int offsets)
  	    system_state == SYSTEM_BOOTING || system_state > SYSTEM_RUNNING ||
  	    oops_in_progress)
  		return;
@@ -12828,7 +12918,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  	if (time_before(jiffies, prev_jiffy + HZ) && prev_jiffy)
  		return;
  	prev_jiffy = jiffies;
-@@ -8918,7 +6529,6 @@ void __cant_sleep(const char *file, int line, int preempt_offset)
+@@ -8918,7 +6617,6 @@ void __cant_sleep(const char *file, int line, int preempt_offset)
  }
  EXPORT_SYMBOL_GPL(__cant_sleep);
  
@@ -12836,7 +12926,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  void __cant_migrate(const char *file, int line)
  {
  	static unsigned long prev_jiffy;
-@@ -8949,45 +6559,42 @@ void __cant_migrate(const char *file, int line)
+@@ -8949,45 +6647,42 @@ void __cant_migrate(const char *file, int line)
  	add_taint(TAINT_WARN, LOCKDEP_STILL_OK);
  }
  EXPORT_SYMBOL_GPL(__cant_migrate);
@@ -12882,7 +12972,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
  #endif /* CONFIG_MAGIC_SYSRQ */
  
  #ifdef CONFIG_KGDB_KDB
-@@ -9017,1323 +6624,457 @@ struct task_struct *curr_task(int cpu)
+@@ -9017,1323 +6712,457 @@ struct task_struct *curr_task(int cpu)
  #endif /* CONFIG_KGDB_KDB */
  
  #ifdef CONFIG_CGROUP_SCHED
@@ -14383,7 +14473,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   *
   * mm::mm_cid::lock:	Serializes mm_update_max_cids() and
   *			mm_update_cpus_allowed(). Nests in mm_cid::mutex
-@@ -10448,11 +7189,28 @@ void call_trace_sched_update_nr_running(struct rq *rq, int count)
+@@ -10448,11 +7277,28 @@ void call_trace_sched_update_nr_running(struct rq *rq, int count)
   * run either in the deferred update function in context of a workqueue or
   * by a task which forks a new one or by a task which exits. Whatever
   * happens first. mm_cid_fixup_cpus_to_task() walks through the possible
@@ -14417,7 +14507,7 @@ index 496dff740dcafed9145d0aa91506f7d4a6106348..38c0dd71d7ec8dd622f9253adfdf86ef
   */
  
  /*
-@@ -10869,93 +7627,31 @@ static DEFINE_PER_CPU(struct sched_change_ctx, sched_change_ctx);
+@@ -10869,93 +7715,31 @@ static DEFINE_PER_CPU(struct sched_change_ctx, sched_change_ctx);
  struct sched_change_ctx *sched_change_begin(struct task_struct *p, unsigned int flags)
  {
  	struct sched_change_ctx *ctx = this_cpu_ptr(&sched_change_ctx);
@@ -16451,7 +16541,7 @@ index e2cf3b08d4e959d5d00f404375c98a3a3be7040d..a64bf71a6c69ae96fbbb7d8598aace72
  #include "topology.c"
  
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 496dff740dcafed9145d0aa91506f7d4a6106348..f3468d4ed59275bf21c273a52b8ff85339ee5dbb 100644
+index 14e947bcb3e5ce38ad28852283525333af23e70e..488f7fd09071d455ed747428466d33f1e9e22fca 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
 @@ -687,11 +687,6 @@ bool raw_spin_rq_trylock(struct rq *rq)
@@ -17100,7 +17190,7 @@ index f921302dc40fb429ab6ad1e5d93d5cd371a7a7fc..2fade7dab9b01abbe9603de2c96cca04
  
  #endif /* _KERNEL_SCHED_PELT_H */
 diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
-index 1ef9ba480f51d1224c21da7a6f93b16f809b2069..1a1615aad8da32c384de6e3f1135a71fa5ffe084 100644
+index 0d068b2f3718909ca279c7e977811f491ab699a9..3e895d879d6e5c79ef831743ea73e216a3e89529 100644
 --- a/kernel/sched/sched.h
 +++ b/kernel/sched/sched.h
 @@ -5,6 +5,10 @@
@@ -18340,7 +18430,7 @@ index ebd8ea353687e034a709835af3d79a0682fe453f..94d0d216e79c3fe6624725377e1c39a4
  
  #
 diff --git a/mm/huge_memory.c b/mm/huge_memory.c
-index b298cba853ab9525cd2947613db8482aa7588aed..90fd91e4ae224084ed3d238d63e4b832078d379f 100644
+index 123d21cded1bfdbc45690953079b863ba02e8764..723c5adc7761778cffb8ac8ab4b5f66be2b4407f 100644
 --- a/mm/huge_memory.c
 +++ b/mm/huge_memory.c
 @@ -63,7 +63,11 @@ unsigned long transparent_hugepage_flags __read_mostly =
@@ -18356,7 +18446,7 @@ index b298cba853ab9525cd2947613db8482aa7588aed..90fd91e4ae224084ed3d238d63e4b832
  	(1<<TRANSPARENT_HUGEPAGE_USE_ZERO_PAGE_FLAG);
  
 diff --git a/mm/internal.h b/mm/internal.h
-index 546114d3ee448785884bc2cc081cfd201b0d812e..5a5d6101c95b65254e65add0ba159b3a2e694a1f 100644
+index e1e64b875885ab181efc213be2fdf87a9725eb4d..0dbd39b600aa42b7e217d08f3f34be87fc865dd8 100644
 --- a/mm/internal.h
 +++ b/mm/internal.h
 @@ -890,6 +890,7 @@ void post_alloc_hook(struct page *page, unsigned int order, gfp_t gfp_flags);
@@ -18368,7 +18458,7 @@ index 546114d3ee448785884bc2cc081cfd201b0d812e..5a5d6101c95b65254e65add0ba159b3a
  struct page *__alloc_frozen_pages_noprof(gfp_t, unsigned int order, int nid,
  		nodemask_t *);
 diff --git a/mm/page_alloc.c b/mm/page_alloc.c
-index 2d4b6f1a554ed21e0f169cd85b5e1ef8190bdf02..752f6d33b0b369f9e9214b120441b4d2b77af17f 100644
+index e92898ad51cd8149f2ee2813e608e96237d61156..4cbea8ea75885be2bd2d633cfd390742d40cd9d7 100644
 --- a/mm/page_alloc.c
 +++ b/mm/page_alloc.c
 @@ -90,6 +90,8 @@ typedef int __bitwise fpi_t;
@@ -18392,7 +18482,7 @@ index 2d4b6f1a554ed21e0f169cd85b5e1ef8190bdf02..752f6d33b0b369f9e9214b120441b4d2
  static int watermark_scale_factor = 10;
  int defrag_mode;
  
-@@ -4726,6 +4732,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4734,6 +4740,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  	int reserve_flags;
  	bool compact_first = false;
  	bool can_retry_reserves = true;
@@ -18400,7 +18490,7 @@ index 2d4b6f1a554ed21e0f169cd85b5e1ef8190bdf02..752f6d33b0b369f9e9214b120441b4d2
  
  	if (unlikely(nofail)) {
  		/*
-@@ -4795,8 +4802,13 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4803,8 +4810,13 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  
  retry:
  	/* Ensure kswapd doesn't accidentally go to sleep as long as we loop */
@@ -18415,7 +18505,7 @@ index 2d4b6f1a554ed21e0f169cd85b5e1ef8190bdf02..752f6d33b0b369f9e9214b120441b4d2
  
  	/*
  	 * The adjusted alloc_flags might result in immediate success, so try
-@@ -4987,9 +4999,12 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4995,9 +5007,12 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  		goto retry;
  	}
  fail:
