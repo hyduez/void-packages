@@ -1,6 +1,6 @@
 # Template file for 'SubTUI'
 pkgname=SubTUI
-version=2.14.1
+version=2.14.3
 revision=1
 build_style=go
 go_import_path=github.com/MattiaPun/SubTUI/v2
@@ -11,7 +11,7 @@ maintainer="Soulful Sailer <soulful.sailer@entropic.pro>"
 license="MIT"
 homepage="https://github.com/MattiaPun/SubTUI"
 distfiles="https://github.com/MattiaPun/SubTUI/archive/refs/tags/v${version}.tar.gz"
-checksum=d50f46ca92a2893509ba898cb8b7387e7e89beb2aba66c937e2839d65a08704b
+checksum=71f8882811ff4161ebfeb92bc3c1e9466cff99ff541eb60d20173c7fe46eb7b2
 
 post_install() {
 	vlicense LICENSE
